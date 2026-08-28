@@ -132,14 +132,32 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
         audio: false,
       };
 
-      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      let mediaStream: MediaStream;
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (firstErr) {
+        console.warn('First getUserMedia attempt failed, trying fallback with generic video constraint:', firstErr);
+        // Fallback constraint if high-res/facingMode failed on specific device
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
+
       setStream(mediaStream);
 
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
-        await videoRef.current.play().catch(e => console.warn('Video play warning:', e));
+        videoRef.current.setAttribute('playsinline', 'true');
+        videoRef.current.setAttribute('webkit-playsinline', 'true');
+        
+        try {
+          await videoRef.current.play();
+        } catch (playErr) {
+          console.warn('Video auto-play interrupted or failed:', playErr);
+        }
 
-        // Start live barcode detector on video
+        // Start live barcode detector on video if auto_barcode mode
         if (scanMode === 'auto_barcode') {
           setTimeout(() => {
             if (videoRef.current) {
