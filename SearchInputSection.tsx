@@ -1,5 +1,5 @@
-import React, { useRef, useEffect } from 'react';
-import { Search, X, Clipboard, Sparkles, Filter } from 'lucide-react';
+import React, { useRef } from 'react';
+import { Search, X, Clipboard, Filter } from 'lucide-react';
 import { audioFeedback } from './audioFeedback';
 
 interface SearchInputSectionProps {
@@ -50,14 +50,6 @@ export const SearchInputSection: React.FC<SearchInputSectionProps> = ({
     inputRef.current?.focus();
     audioFeedback.triggerHaptic('light', hapticEnabled);
   };
-
-  const sampleNumbers = [
-    'HE221-00311X',
-    '0 445 110 239',
-    '03L 130 277 B',
-    'WK 820/17',
-    'CT1139K2',
-  ];
 
   return (
     <div className="bg-white border border-zinc-200/90 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
@@ -173,25 +165,6 @@ export const SearchInputSection: React.FC<SearchInputSectionProps> = ({
           <Search className={`w-5 h-5 ${isSearching ? 'animate-spin' : ''}`} />
           <span>{isSearching ? 'Przeszukuję...' : 'Szukaj w bazie'}</span>
         </button>
-      </div>
-
-      {/* Quick sample numbers helper */}
-      <div className="flex items-center gap-2 pt-1 flex-wrap">
-        <span className="text-[11px] text-zinc-500 font-medium flex items-center gap-1 font-['Ubuntu',sans-serif]">
-          <Sparkles className="w-3 h-3 text-[#F36F21]" /> Przykłady:
-        </span>
-        {sampleNumbers.map(sample => (
-          <button
-            key={sample}
-            onClick={() => {
-              setSearchQuery(sample);
-              audioFeedback.triggerHaptic('light', hapticEnabled);
-            }}
-            className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-zinc-100 hover:bg-zinc-200 text-zinc-700 hover:text-[#F36F21] transition-colors border border-zinc-200 cursor-pointer"
-          >
-            {sample}
-          </button>
-        ))}
       </div>
     </div>
   );
