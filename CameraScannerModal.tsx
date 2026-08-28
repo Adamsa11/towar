@@ -38,9 +38,8 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const nativeCameraInputRef = useRef<HTMLInputElement | null>(null);
   const scannerControlsRef = useRef<{ stop: () => void } | null>(null);
-  const isScanningFrameRef = useRef<boolean>(false);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<{ isPermissionDenied: boolean; message: string } | null>(null);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [hasTorch, setHasTorch] = useState<boolean>(false);
@@ -52,6 +51,7 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
   const [lastDetectedBarcode, setLastDetectedBarcode] = useState<string | null>(null);
   const [isFlashing, setIsFlashing] = useState<boolean>(false);
 
+  // Stable stopStream with zero re-render cycle dependencies
   const stopStream = useCallback(() => {
     if (scannerControlsRef.current) {
       try {
@@ -61,11 +61,22 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
       }
       scannerControlsRef.current = null;
     }
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        try {
+          track.stop();
+        } catch (err) {
+          console.warn('Track stop error:', err);
+        }
+      });
+      streamRef.current = null;
     }
-  }, [stream]);
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setTorchOn(false);
+    setHasTorch(false);
+  }, []);
 
   const handleBarcodeFound = useCallback((barcodeText: string) => {
     if (!barcodeText || isCapturing) return;
@@ -96,8 +107,7 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
 
     try {
       const codeReader = new BrowserMultiFormatReader();
-      // Decode from live video stream
-      const controls = await codeReader.decodeFromVideoElement(videoElement, (result, err) => {
+      const controls = await codeReader.decodeFromVideoElement(videoElement, (result) => {
         if (result && result.getText()) {
           const text = result.getText();
           handleBarcodeFound(text);
@@ -105,9 +115,20 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
       });
       scannerControlsRef.current = controls;
     } catch (scannerErr) {
-      console.warn('ZXing live scanner initialization fallback to animation frame:', scannerErr);
+      console.warn('ZXing live scanner error:', scannerErr);
     }
   }, [handleBarcodeFound]);
+
+  const stopBarcodeScanner = useCallback(() => {
+    if (scannerControlsRef.current) {
+      try {
+        scannerControlsRef.current.stop();
+      } catch (e) {
+        console.warn(e);
+      }
+      scannerControlsRef.current = null;
+    }
+  }, []);
 
   const startCamera = useCallback(async () => {
     setCameraError(null);
@@ -136,34 +157,32 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
       try {
         mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       } catch (firstErr) {
-        console.warn('First getUserMedia attempt failed, trying fallback with generic video constraint:', firstErr);
-        // Fallback constraint if high-res/facingMode failed on specific device
-        mediaStream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false,
-        });
+        console.warn('First getUserMedia attempt failed, trying fallback with generic constraint:', firstErr);
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: facingMode },
+            audio: false,
+          });
+        } catch {
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+        }
       }
 
-      setStream(mediaStream);
+      streamRef.current = mediaStream;
 
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
         videoRef.current.setAttribute('playsinline', 'true');
         videoRef.current.setAttribute('webkit-playsinline', 'true');
+        videoRef.current.muted = true;
         
         try {
           await videoRef.current.play();
         } catch (playErr) {
           console.warn('Video auto-play interrupted or failed:', playErr);
-        }
-
-        // Start live barcode detector on video if auto_barcode mode
-        if (scanMode === 'auto_barcode') {
-          setTimeout(() => {
-            if (videoRef.current) {
-              startBarcodeScanner(videoRef.current);
-            }
-          }, 300);
         }
       }
 
@@ -185,28 +204,42 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
       setCameraError({
         isPermissionDenied: isDenied,
         message: isDenied
-          ? 'Brak zgody na dostęp do aparatu w przeglądarce. Możesz zrobić zdjęcie aparatem systemowym lub odblokować uprawnienia w pasku adresu.'
+          ? 'Brak zgody na dostęp do aparatu w przeglądarce. Zezwól na dostęp do kamery lub zrób zdjęcie aparatem systemowym poniżej.'
           : err instanceof Error ? err.message : 'Nie udało się uzyskać obrazu z aparatu.',
       });
     }
-  }, [facingMode, stopStream, scanMode, startBarcodeScanner]);
+  }, [facingMode, stopStream]);
 
+  // Main camera stream lifecycle - only triggered when modal opens/closes or camera switches
   useEffect(() => {
     if (isOpen) {
       startCamera();
     } else {
       stopStream();
-      setTorchOn(false);
-      setLastDetectedBarcode(null);
     }
     return () => {
       stopStream();
     };
   }, [isOpen, startCamera, stopStream]);
 
+  // Handle barcode scanner mode toggle without restarting video stream
+  useEffect(() => {
+    if (!isOpen || !streamRef.current || !videoRef.current) return;
+
+    if (scanMode === 'auto_barcode') {
+      startBarcodeScanner(videoRef.current);
+    } else {
+      stopBarcodeScanner();
+    }
+
+    return () => {
+      stopBarcodeScanner();
+    };
+  }, [isOpen, scanMode, startBarcodeScanner, stopBarcodeScanner]);
+
   const toggleTorch = async () => {
-    if (!stream) return;
-    const track = stream.getVideoTracks()[0];
+    if (!streamRef.current) return;
+    const track = streamRef.current.getVideoTracks()[0];
     if (track) {
       try {
         const newTorch = !torchOn;
