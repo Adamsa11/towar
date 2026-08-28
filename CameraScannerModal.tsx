@@ -47,9 +47,10 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
   const [torchOn, setTorchOn] = useState<boolean>(false);
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
   
-  // Scanner modes: 'auto_barcode' (live continuous decoding) vs 'ai_photo' (OCR snapshot)
-  const [scanMode, setScanMode] = useState<'auto_barcode' | 'ai_photo'>('auto_barcode');
+  // Scanner modes: 'ai_photo' (OCR snapshot from live camera) vs 'auto_barcode' (continuous 1D/2D decoding)
+  const [scanMode, setScanMode] = useState<'ai_photo' | 'auto_barcode'>('ai_photo');
   const [lastDetectedBarcode, setLastDetectedBarcode] = useState<string | null>(null);
+  const [isFlashing, setIsFlashing] = useState<boolean>(false);
 
   const stopStream = useCallback(() => {
     if (scannerControlsRef.current) {
@@ -211,14 +212,19 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
     if (!videoRef.current || isCapturing) return;
 
     setIsCapturing(true);
+    setIsFlashing(true);
     audioFeedback.playScanBeep(soundEnabled);
     audioFeedback.triggerHaptic('medium', hapticEnabled);
+
+    setTimeout(() => {
+      setIsFlashing(false);
+    }, 180);
 
     try {
       const video = videoRef.current;
       const canvas = canvasRef.current || document.createElement('canvas');
-      const width = video.videoWidth || 1280;
-      const height = video.videoHeight || 720;
+      const width = video.videoWidth || 1920;
+      const height = video.videoHeight || 1080;
 
       canvas.width = width;
       canvas.height = height;
@@ -226,7 +232,7 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(video, 0, 0, width, height);
-        const base64 = canvas.toDataURL('image/jpeg', 0.92);
+        const base64 = canvas.toDataURL('image/jpeg', 0.94);
         stopStream();
         onCapture(base64);
       }
@@ -395,21 +401,34 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
           </div>
         ) : (
           <>
-            <video
-              ref={videoRef}
-              playsInline
-              muted
-              autoPlay
-              className="absolute inset-0 w-full h-full object-cover"
-            />
+            {/* White camera flash feedback */}
+            {isFlashing && (
+              <div className="absolute inset-0 bg-white z-50 pointer-events-none transition-opacity duration-150 animate-out fade-out" />
+            )}
+
+            {/* Video stream with tap-to-capture */}
+            <div 
+              onClick={handleCapture}
+              className="absolute inset-0 w-full h-full cursor-pointer flex items-center justify-center"
+              title="Dotknij ekran, aby zrobić zdjęcie i odczytać tekst (OCR)"
+            >
+              <video
+                ref={videoRef}
+                playsInline
+                muted
+                autoPlay
+                className="w-full h-full object-cover"
+              />
+            </div>
 
             {/* Target Reticle / Scanner Framing */}
             <div
-              className={`relative z-10 ${
+              onClick={handleCapture}
+              className={`relative z-10 cursor-pointer ${
                 scanMode === 'auto_barcode' ? 'w-72 h-44 sm:w-80 sm:h-48' : 'w-72 h-64 sm:w-80 sm:h-72'
               } border-2 ${
                 lastDetectedBarcode ? 'border-emerald-400 shadow-[0_0_20px_#34d399]' : 'border-[#F36F21]/90'
-              } rounded-2xl shadow-[0_0_0_9999px_rgba(22,22,22,0.75)] flex flex-col items-center justify-between p-3 pointer-events-none transition-all duration-300`}
+              } rounded-2xl shadow-[0_0_0_9999px_rgba(22,22,22,0.75)] flex flex-col items-center justify-between p-3 transition-all duration-300`}
             >
               {/* Corner markers */}
               <div className="w-full flex justify-between">
@@ -417,12 +436,19 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
                 <span className={`w-4 h-4 border-t-4 border-r-4 ${lastDetectedBarcode ? 'border-emerald-400' : 'border-[#F36F21]'} -mt-1 -mr-1 rounded-tr`} />
               </div>
 
-              {/* Animated laser line */}
-              <div className={`w-full h-0.5 ${
-                lastDetectedBarcode
-                  ? 'bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_15px_#34d399]'
-                  : 'bg-gradient-to-r from-transparent via-[#F36F21] to-transparent shadow-[0_0_12px_#F36F21] animate-pulse'
-              }`} />
+              {/* Center OCR / Barcode Guide */}
+              <div className="flex flex-col items-center gap-1.5 pointer-events-none">
+                <div className={`w-full h-0.5 ${
+                  lastDetectedBarcode
+                    ? 'bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_15px_#34d399]'
+                    : 'bg-gradient-to-r from-transparent via-[#F36F21] to-transparent shadow-[0_0_12px_#F36F21] animate-pulse'
+                }`} />
+                {scanMode === 'ai_photo' && (
+                  <span className="text-[11px] font-bold text-white/90 bg-[#161616]/80 px-3 py-1 rounded-full border border-white/20 backdrop-blur-xs shadow-md">
+                    Dotknij lub wciśnij migawkę
+                  </span>
+                )}
+              </div>
 
               <div className="w-full flex justify-between">
                 <span className={`w-4 h-4 border-b-4 border-l-4 ${lastDetectedBarcode ? 'border-emerald-400' : 'border-[#F36F21]'} -mb-1 -ml-1 rounded-bl`} />
@@ -448,7 +474,7 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
               ) : (
                 <>
                   <Camera className="w-3.5 h-3.5 text-[#F36F21]" />
-                  <span>Wyceluj w tabliczkę / grawer i naciśnij przycisk migawki</span>
+                  <span>Zrób zdjęcie etykiety / tabliczki, aby odczytać numery OCR</span>
                 </>
               )}
             </div>
@@ -496,27 +522,35 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
               audioFeedback.triggerHaptic('medium', hapticEnabled);
               nativeCameraInputRef.current?.click();
             }}
-            className="w-20 h-20 rounded-full border-4 border-[#F36F21]/50 p-1 bg-transparent active:scale-90 transition-transform cursor-pointer hover:border-[#F36F21]"
+            className="flex flex-col items-center gap-1.5 active:scale-95 transition-transform cursor-pointer"
             title="Zrób zdjęcie aparatem"
           >
-            <div className="w-full h-full rounded-full bg-[#F36F21] hover:bg-[#ff7e33] flex items-center justify-center shadow-lg shadow-[#F36F21]/30">
-              <Camera className="w-8 h-8 text-white" />
+            <div className="w-20 h-20 rounded-full border-4 border-[#F36F21]/40 p-1 bg-transparent hover:border-[#F36F21] transition-all">
+              <div className="w-full h-full rounded-full bg-[#F36F21] hover:bg-[#ff7e33] flex items-center justify-center shadow-lg shadow-[#F36F21]/30">
+                <Camera className="w-8 h-8 text-white" />
+              </div>
             </div>
+            <span className="text-[11px] font-bold text-white font-['Ubuntu',sans-serif]">Zrób zdjęcie</span>
           </button>
         ) : (
           <button
             onClick={handleCapture}
             disabled={isCapturing}
-            className="w-20 h-20 rounded-full border-4 border-[#F36F21]/50 p-1 bg-transparent active:scale-90 transition-transform cursor-pointer hover:border-[#F36F21] group"
-            title={scanMode === 'auto_barcode' ? 'Zrób zdjęcie kodu' : 'Zrób zdjęcie do analizy AI'}
+            className="flex flex-col items-center gap-1.5 active:scale-90 transition-transform cursor-pointer group"
+            title={scanMode === 'auto_barcode' ? 'Zrób zdjęcie kodu kreskowego' : 'Zrób zdjęcie i odczytaj tekst OCR'}
           >
-            <div className="w-full h-full rounded-full bg-[#F36F21] group-hover:bg-[#ff7e33] flex items-center justify-center shadow-lg shadow-[#F36F21]/30">
-              {scanMode === 'auto_barcode' ? (
-                <Barcode className="w-8 h-8 text-white" />
-              ) : (
-                <Camera className="w-8 h-8 text-white" />
-              )}
+            <div className="w-20 h-20 rounded-full border-4 border-[#F36F21]/50 p-1 bg-transparent group-hover:border-[#F36F21] transition-all shadow-xl shadow-[#F36F21]/20 animate-pulse">
+              <div className="w-full h-full rounded-full bg-[#F36F21] group-hover:bg-[#ff7e33] flex items-center justify-center shadow-lg shadow-[#F36F21]/40">
+                {scanMode === 'auto_barcode' ? (
+                  <Barcode className="w-8 h-8 text-white" />
+                ) : (
+                  <Camera className="w-8 h-8 text-white" />
+                )}
+              </div>
             </div>
+            <span className="text-[11px] font-bold text-white font-['Ubuntu',sans-serif] tracking-wide">
+              {scanMode === 'auto_barcode' ? 'Zrób zdjęcie kodu' : 'ZRÓB ZDJĘCIE & OCR'}
+            </span>
           </button>
         )}
 
