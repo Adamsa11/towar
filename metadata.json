@@ -1,0 +1,10 @@
+{
+  "name": "Skaner Towaru",
+  "description": "Mobilna aplikacja do wyszukiwania elementów po numerach katalogowych ze zdjęć (AI Gemini OCR) i bazy Supabase (tabela towar).",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
