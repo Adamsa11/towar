@@ -94,6 +94,25 @@ export const HelpManualModal: React.FC<HelpManualModalProps> = ({
             </div>
           </div>
 
+          {/* Android Home Screen Shortcut Info */}
+          <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 flex gap-3.5 items-center shadow-xs">
+            <img 
+              src="/icon-192.png" 
+              alt="Ikona aplikacji Saw-Trak" 
+              className="w-12 h-12 rounded-xl shadow-md border border-emerald-600/30 shrink-0 object-cover"
+              referrerPolicy="no-referrer"
+            />
+            <div className="space-y-0.5">
+              <h4 className="font-bold text-zinc-900 text-xs font-['Ubuntu',sans-serif] flex items-center gap-1.5">
+                <Smartphone className="w-3.5 h-3.5 text-emerald-600" />
+                Ikona na pulpicie telefonu (Android / iPhone)
+              </h4>
+              <p className="text-[11px] text-zinc-600 leading-relaxed">
+                W Chrome na telefonie kliknij menu <strong>⋮</strong> (trzy kropki w prawym górnym rogu) i wybierz <strong>„Dodaj do ekranu głównego”</strong> lub <strong>„Zainstaluj aplikację”</strong>. Złota ikona wózka pojawi się na Twoim pulpicie.
+              </p>
+            </div>
+          </div>
+
           {/* Quick Setup Hint */}
           <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 flex items-center justify-between gap-3 shadow-xs">
             <div className="flex items-center gap-2 text-xs text-zinc-600">
