@@ -2,7 +2,7 @@ const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
 
-const srcImage = path.resolve(__dirname, '../src/assets/images/app_icon_1788152769952.jpg');
+const srcImage = path.resolve(__dirname, '../src/assets/images/green_forklift_app_icon_1788155105193.jpg');
 const publicDir = path.resolve(__dirname, '../public');
 
 if (!fs.existsSync(publicDir)) {
