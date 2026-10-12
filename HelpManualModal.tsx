@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, HelpCircle, Camera, CheckSquare, Search, Database, Sparkles, Smartphone } from 'lucide-react';
+import { X, HelpCircle, Camera, CheckSquare, Search, Database, Sparkles, Smartphone, Mic } from 'lucide-react';
 
 interface HelpManualModalProps {
   isOpen: boolean;
@@ -91,6 +91,21 @@ export const HelpManualModal: React.FC<HelpManualModalProps> = ({
                   Aplikacja przeszukuje Twoją bazę Supabase i zwraca kolumny <strong className="text-[#F36F21]">Nr katalogowy</strong>, <strong className="text-sky-700">kod</strong> oraz <strong className="text-zinc-900">Nazwa</strong> wraz ze stanami magazynowymi i lokalizacją.
                 </p>
               </div>
+            </div>
+          </div>
+
+          {/* Voice Search info */}
+          <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 flex gap-3.5 items-center shadow-xs">
+            <div className="w-10 h-10 rounded-xl bg-emerald-600/10 border border-emerald-600/30 flex items-center justify-center text-emerald-700 font-bold shrink-0">
+              <Mic className="w-5 h-5 text-emerald-600" />
+            </div>
+            <div className="space-y-0.5">
+              <h4 className="font-bold text-zinc-900 text-xs font-['Ubuntu',sans-serif] flex items-center gap-1.5">
+                Transkrypcja mowy na tekst (Przycisk z mikrofonem)
+              </h4>
+              <p className="text-[11px] text-zinc-600 leading-relaxed">
+                Kliknij zielony przycisk <strong>„Głos”</strong> z mikrofonem koło przycisku „Szukaj w bazie”. Powiedz numer części lub jej nazwę (np. <em>filtr oleju</em> lub <em>HE221-00311X</em>) i kliknij Stop. Model <strong>Gemini 3.5 Transcribe</strong> bezbłędnie przetłumaczy Twoją mowę na tekst zapytania.
+              </p>
             </div>
           </div>
 

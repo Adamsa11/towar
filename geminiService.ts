@@ -225,8 +225,44 @@ Ważne:
         }
       }
     } catch (geminiError) {
-      console.warn('Gemini OCR API call failed, falling back to local OCR:', geminiError);
+      console.warn('Gemini OCR API call failed, falling back to server OCR:', geminiError);
     }
+  }
+
+  // Try server-side OCR proxy endpoint (/api/ocr) if available
+  try {
+    const serverRes = await fetch('/api/ocr', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64, model: settings.geminiModel || 'gemini-2.5-flash' }),
+    });
+
+    if (serverRes.ok) {
+      const parsed = await serverRes.json();
+      if (parsed.numbers && Array.isArray(parsed.numbers) && parsed.numbers.length > 0) {
+        const detectedNumbers: DetectedNumber[] = parsed.numbers
+          .map((item: any, idx: number) => ({
+            id: `det_${Date.now()}_${idx}`,
+            text: item.text || '',
+            cleanText: item.cleanText || (item.text || '').replace(/[\s\-_.\/]/g, '').toUpperCase(),
+            label: item.label || 'Numer z etykiety (Gemini AI)',
+            type: (item.type as DetectedNumber['type']) || 'catalog',
+            confidence: item.confidence || 0.95,
+          }))
+          .filter((n: DetectedNumber) => n.text.trim().length > 0);
+
+        if (detectedNumbers.length > 0) {
+          return {
+            detectedNumbers,
+            rawText: parsed.summary || '',
+            source: 'ai_gemini',
+            modelUsed: settings.geminiModel || 'gemini-2.5-flash',
+          };
+        }
+      }
+    }
+  } catch {
+    // Ignore server OCR failure and continue to local OCR
   }
 
   // Automatic Local OCR fallback (Tesseract.js)
