@@ -421,6 +421,7 @@ export const SearchInputSection: React.FC<SearchInputSectionProps> = ({
             type="button"
             onClick={isRecording ? () => handleStopRecording() : handleStartRecording}
             disabled={isTranscribing || isSearching}
+            aria-label="Wprowadź numer części głosowo"
             title={
               isRecording
                 ? 'Kliknij, aby zatwierdzić podyktowany tekst'
@@ -445,10 +446,7 @@ export const SearchInputSection: React.FC<SearchInputSectionProps> = ({
                 <span>Transkrypcja...</span>
               </>
             ) : (
-              <>
-                <Mic className="w-5 h-5" />
-                <span>Głos</span>
-              </>
+              <Mic className="w-5 h-5" />
             )}
           </button>
 
