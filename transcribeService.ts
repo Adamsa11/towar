@@ -122,6 +122,9 @@ export const POLISH_WORD_TO_DIGIT: Record<string, string> = {
  * Spoken punctuation and symbols in part codes
  */
 export const SPOKEN_SYMBOLS: Record<string, string> = {
+  spacja: ' ',
+  odstęp: ' ',
+  odstep: ' ',
   myślnik: '-',
   myslnik: '-',
   kreska: '-',
@@ -159,20 +162,75 @@ export const SPOKEN_LETTERS: Record<string, string> = {
 };
 
 /**
+ * Combines two speech transcript segments intelligently without unwanted spaces
+ * during brief speech pauses (e.g. "he" + "221" -> "he221", "123" + "456" -> "123456").
+ */
+export function combineSpeechSegments(prev: string, next: string): string {
+  if (!prev) return next;
+  if (!next) return prev;
+
+  const prevClean = prev.trim();
+  const nextClean = next.trim();
+  if (!prevClean) return nextClean;
+  if (!nextClean) return prevClean;
+
+  // If user explicitly spoke "spacja" or there's an explicit trailing/leading space, preserve it
+  if (/\s$/.test(prev) || /^\s/.test(next)) {
+    return `${prevClean} ${nextClean}`;
+  }
+
+  // If connected by separator characters (-, _, /), connect directly without space
+  if (/[-_\/]$/.test(prevClean) || /^[-_\/]/.test(nextClean)) {
+    return `${prevClean}${nextClean}`;
+  }
+
+  // Letter + Digit (e.g. "he" + "221" -> "he221"): connect directly without space
+  if (/[a-zA-Z]$/.test(prevClean) && /^\d/.test(nextClean)) {
+    return `${prevClean}${nextClean}`;
+  }
+
+  // Digit + Letter (e.g. "221" + "x" -> "221x", "311" + "X" -> "311X"): connect directly
+  if (/\d$/.test(prevClean) && /^[a-zA-Z]/.test(nextClean)) {
+    return `${prevClean}${nextClean}`;
+  }
+
+  // Digit + Digit (e.g. "0" + "221" -> "0221", "123" + "456" -> "123456"): connect directly
+  if (/\d$/.test(prevClean) && /^\d/.test(nextClean)) {
+    return `${prevClean}${nextClean}`;
+  }
+
+  // Short letter code (1-3 letters like "h", "he") + Letter: connect directly (e.g. "h" + "e" -> "he")
+  if (/\b[a-zA-Z]{1,3}$/.test(prevClean) && /^[a-zA-Z]/.test(nextClean)) {
+    return `${prevClean}${nextClean}`;
+  }
+
+  // Both sides look like normal dictionary words (length >= 4 and purely alphabetical): keep normal word space
+  return `${prevClean} ${nextClean}`;
+}
+
+/**
  * Normalizes spoken Polish numbers, symbols, and part codes into proper digits and notation.
  * e.g.:
  * "zero" -> "0"
+ * "he, 221" -> "HE221" (no commas, no spaces between code letters and digits)
  * "zero zero trzy jeden jeden" -> "00311"
  * "HE dwa dwa jeden myślnik zero zero trzy jeden jeden iks" -> "HE221-00311X"
- * "filtr zero jeden" -> "filtr 01"
+ * "filtr oleju" -> "filtr oleju"
  */
 export function normalizeSpokenPartNumber(input: string): string {
   if (!input) return '';
   let result = input;
 
-  // 1. Replace spoken symbols (myślnik, kreska, slash, etc.)
+  // 0. Remove speech engine pause commas and semicolons
+  // Web Speech API in Polish inserts commas on speech pauses (e.g. "he, 221", "123, 456", "filtr, oleju").
+  // Strip commas between alphanumeric characters completely so codes stay joined without commas:
+  result = result.replace(/([a-zA-Z0-9])\s*,\s*([a-zA-Z0-9])/g, '$1 $2');
+  // Any leftover commas or semicolons are replaced by a space or removed
+  result = result.replace(/[,;]/g, ' ');
+
+  // 1. Replace spoken symbols (spacja, myślnik, kreska, slash, etc.)
   for (const [spoken, symbol] of Object.entries(SPOKEN_SYMBOLS)) {
-    const regex = new RegExp(`(^|\\s)${spoken}(\\s|$)`, 'gi');
+    const regex = new RegExp(`(^|\\s|[.,;])${spoken}(\\s|[.,;]|$)`, 'gi');
     result = result.replace(regex, `$1${symbol}$2`);
   }
 
@@ -180,28 +238,39 @@ export function normalizeSpokenPartNumber(input: string): string {
   // Run twice to catch adjacent spoken numbers (e.g. "zero zero" -> "0 0")
   for (let pass = 0; pass < 2; pass++) {
     for (const [spoken, digit] of Object.entries(POLISH_WORD_TO_DIGIT)) {
-      const regex = new RegExp(`(^|\\s)${spoken}(\\s|$)`, 'gi');
+      const regex = new RegExp(`(^|\\s|[.,;])${spoken}(\\s|[.,;]|$)`, 'gi');
       result = result.replace(regex, `$1${digit}$2`);
     }
   }
 
   // 3. Replace spoken letters when isolated (iks -> X, ha -> H, etc.)
   for (const [spoken, letter] of Object.entries(SPOKEN_LETTERS)) {
-    const regex = new RegExp(`(^|\\s)${spoken}(\\s|$)`, 'gi');
+    const regex = new RegExp(`(^|\\s|[.,;])${spoken}(\\s|[.,;]|$)`, 'gi');
     result = result.replace(regex, `$1${letter}$2`);
   }
 
-  // 4. Compact consecutive single digits into a continuous number:
-  // e.g. "0 0 3 1 1" -> "00311"
-  result = result.replace(/(?<=\b\d)\s+(?=\d\b)/g, '');
-  result = result.replace(/(?<=\b\d{2,})\s+(?=\d\b)/g, '');
+  // 4. Connect isolated single letters (e.g. "h e" -> "he")
+  result = result.replace(/(?<=\b[a-zA-Z])\s+(?=[a-zA-Z]\b)/g, '');
 
-  // 5. Remove unwanted spaces around code separators (-, /, .)
+  // 5. Connect letter codes with adjacent numbers (case-insensitive):
+  // e.g. "he 221" -> "he221", "HE 221" -> "HE221", "c 330" -> "c330"
+  result = result.replace(/(?<=[a-zA-Z]{1,6})\s+(?=\d)/gi, '');
+  // e.g. "311 X" -> "311X", "221 he" -> "221he", "221 x" -> "221x"
+  result = result.replace(/(?<=\d)\s+(?=[a-zA-Z]{1,4}\b)/gi, '');
+
+  // 6. Compact consecutive digits into a continuous number:
+  // e.g. "0 0 3 1 1" -> "00311", "123 456" -> "123456", "2 2 1" -> "221", "0 221" -> "0221"
+  result = result.replace(/(?<=\d)\s+(?=\d)/g, '');
+
+  // 7. Remove unwanted spaces around code separators (-, /, _, .)
   result = result.replace(/\s*([-_/])\s*/g, '$1');
 
-  // 6. Connect uppercase letter codes with adjacent numbers (e.g. "HE 221" -> "HE221", "311 X" -> "311X")
-  result = result.replace(/(?<=[A-Z]{1,3})\s+(?=\d)/g, '');
-  result = result.replace(/(?<=\d)\s+(?=[A-Z]\b)/g, '');
+  // 8. Capitalize alphanumeric part codes (e.g. "he221" -> "HE221", "311x" -> "311X", "he221x" -> "HE221X")
+  result = result.replace(/\b([a-zA-Z0-9]*[a-zA-Z]+\d+[a-zA-Z0-9]*|[a-zA-Z0-9]*\d+[a-zA-Z]+[a-zA-Z0-9]*)\b/gi, (match) => match.toUpperCase());
+
+  // 9. Strip any trailing or leading periods, commas, colons, or speech recognition end marks
+  result = result.replace(/[\.\,\;\:\!\?]+$/g, '');
+  result = result.replace(/^[\.\,\;\:\!\?]+/g, '');
 
   return result.trim();
 }
@@ -324,23 +393,21 @@ export class LiveSpeechRecognizer {
         }
 
         if (finalChunk) {
-          const chunkClean = finalChunk.trim();
+          // Clean speech engine punctuation (commas, periods) from Web Speech Recognition chunks
+          const chunkClean = finalChunk.trim().replace(/^[\.\,\;\:\!\?]+|[\.\,\;\:\!\?]+$/g, '');
           if (this.accumulatedFinalText) {
-            this.accumulatedFinalText = `${this.accumulatedFinalText} ${chunkClean}`;
+            this.accumulatedFinalText = combineSpeechSegments(this.accumulatedFinalText, chunkClean);
           } else {
             this.accumulatedFinalText = chunkClean;
           }
         }
 
-        this.currentInterimText = interim.trim();
+        this.currentInterimText = interim.trim().replace(/^[\.\,\;\:\!\?]+|[\.\,\;\:\!\?]+$/g, '');
 
-        // Build combined live text
-        const rawLiveText = [this.accumulatedFinalText, this.currentInterimText]
-          .filter(Boolean)
-          .join(' ')
-          .trim();
+        // Build combined live text without unwanted spaces during speech pauses (e.g. "he" + "221" -> "he221")
+        const rawLiveText = combineSpeechSegments(this.accumulatedFinalText, this.currentInterimText);
 
-        // Convert spoken numbers like "zero" -> "0" immediately in real-time
+        // Convert spoken numbers like "zero" -> "0" and catalog codes immediately in real-time
         const normalizedLiveText = normalizeSpokenPartNumber(rawLiveText);
 
         options.onLiveText(normalizedLiveText, Boolean(finalChunk && !interim));

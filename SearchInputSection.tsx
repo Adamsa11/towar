@@ -488,7 +488,7 @@ export const SearchInputSection: React.FC<SearchInputSectionProps> = ({
                 </span>
               </div>
               <p className="text-xs text-emerald-800 font-['Poppins',sans-serif]">
-                Dyktuj wyraźnie numer części lub nazwę (np. <em>HE221-00311X</em>, <em>filtr oleju</em>).
+                Dyktuj numer lub nazwę (np. <em>HE221</em>, <em>filtr oleju</em>). Przerwa w mówieniu łączy kod jednym ciągiem bez przecinków (np. <em>he221</em>). Odstęp wstawisz mówiąc <strong>„spacja”</strong>.
                 {liveTextCount > 0 && (
                   <span className="ml-1 text-emerald-900 font-semibold">
                     ✓ Tekst wpisuje się na bieżąco w powyższym polu.

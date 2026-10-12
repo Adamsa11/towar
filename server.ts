@@ -62,7 +62,9 @@ app.post('/api/transcribe', async (req: Request, res: Response) => {
       'Transkrybuj dokładnie nagranie audio na tekst. Jest to wyszukiwarka części zamiennych do wózków widłowych i maszyn przemysłowych. ' +
       'WAŻNA ZASADA DLA LICZB I CYFR: Zawsze zapisuj cyfry jako cyfry arabskie, a NIGDY słownie! Gdy użytkownik mówi "zero" zapisz "0", gdy mówi "jeden" zapisz "1", "dwa" -> "2", "trzy" -> "3", itd. Ciągi dyktowanych cyfr zapisuj jako spójne numery (np. "zero zero trzy jeden jeden" zapisz jako "00311", "ha e dwa dwa jeden" -> "HE221", "myślnik" -> "-"). ' +
       'Formatuj numery katalogowe, kody i oznaczenia z zachowaniem cyfr, liter i myślników (np. HE221-00311X, 0 445 110 239, 03L 130 277 B) oraz nazwy części (np. filtr powietrza, rozrusznik, pompa hydrauliczna). ' +
-      'Zwróć WYŁĄCZNIE czysty, odczytany tekst bez cudzysłowów, bez podsumowań i bez dodatkowych komentarzy.';
+      'ZASADA DLA PRZERW W MÓWIENIU: Gdy użytkownik na chwilę przerwie mówienie w trakcie dyktowania numeru lub kodu, NIE wstawiaj spacji ani przecinków (np. "he" i "221" zapisz jako jeden spójny ciąg "HE221", bez spacji i bez przecinków). ' +
+      'NIGDY nie stawiaj kropki ani przecinka na końcu tekstu ani numeru. ' +
+      'Zwróć WYŁĄCZNIE czysty, odczytany tekst bez kropki na końcu, bez przecinków na pauzach, bez cudzysłowów, bez podsumowań i bez dodatkowych komentarzy.';
 
     const response = await ai.models.generateContent({
       model: 'gemini-3.5-transcribe',
