@@ -1,14 +1,440 @@
 /**
- * Speech-to-Text Transcription Service
- * Captures microphone audio using MediaRecorder and sends it to the server-side
- * Gemini API endpoint (/api/transcribe) running 'gemini-3.5-transcribe'.
+ * Speech-to-Text & Live Voice Transcription Service
+ * - Live Web Speech Recognition (online real-time streaming into input field)
+ * - Server-side Gemini 3.5 Transcribe (/api/transcribe) running 'gemini-3.5-transcribe'
+ * - Real-time Audio Visualizer volume stream
+ * - Spoken Polish number-to-digit normalizer ("zero" -> "0", "jeden" -> "1", etc.)
  */
 
 export interface TranscribeResponse {
   text: string;
   error?: string;
+  model?: string;
 }
 
+export interface LiveSpeechOptions {
+  onLiveText: (text: string, isFinal: boolean) => void;
+  onVolumeChange?: (volume: number) => void;
+  onError?: (error: string) => void;
+  onEnd?: () => void;
+  initialText?: string;
+  lang?: string;
+}
+
+/**
+ * Polish spoken numbers to Arabic digits dictionary
+ */
+export const POLISH_WORD_TO_DIGIT: Record<string, string> = {
+  zero: '0',
+  zer: '0',
+  zera: '0',
+  zerem: '0',
+  zerze: '0',
+  jeden: '1',
+  jedynka: '1',
+  jedynki: '1',
+  jedno: '1',
+  jedna: '1',
+  dwa: '2',
+  dwójka: '2',
+  dwojka: '2',
+  dwie: '2',
+  dwójki: '2',
+  dwojki: '2',
+  trzy: '3',
+  trójka: '3',
+  trojka: '3',
+  trójki: '3',
+  trojki: '3',
+  cztery: '4',
+  czwórka: '4',
+  czworka: '4',
+  czwórki: '4',
+  czworki: '4',
+  pięć: '5',
+  piec: '5',
+  piątka: '5',
+  piatka: '5',
+  piątki: '5',
+  piatki: '5',
+  sześć: '6',
+  szesc: '6',
+  szóstka: '6',
+  szostka: '6',
+  szóstki: '6',
+  szostki: '6',
+  siedem: '7',
+  siódemka: '7',
+  siodemka: '7',
+  siódemki: '7',
+  siodemki: '7',
+  osiem: '8',
+  ósemka: '8',
+  osemka: '8',
+  ósemki: '8',
+  osemki: '8',
+  dziewięć: '9',
+  dziewiec: '9',
+  dziewiątka: '9',
+  dziewiatka: '9',
+  dziewiątki: '9',
+  dziewiatki: '9',
+  dziesięć: '10',
+  dziesiec: '10',
+  jedenaście: '11',
+  jedenascie: '11',
+  dwanaście: '12',
+  dwanascie: '12',
+  trzynaście: '13',
+  trzynascie: '13',
+  czternaście: '14',
+  czternascie: '14',
+  piętnaście: '15',
+  pietnascie: '15',
+  szesnaście: '16',
+  szesnascie: '16',
+  siedemnaście: '17',
+  siedemnascie: '17',
+  osiemnaście: '18',
+  osiemnascie: '18',
+  dziewiętnaście: '19',
+  dziewietnascie: '19',
+  dwadzieścia: '20',
+  dwadziescia: '20',
+  trzydzieści: '30',
+  trzydziesci: '30',
+  czterdzieści: '40',
+  czterdziesci: '40',
+  pięćdziesiąt: '50',
+  piecdziesiat: '50',
+  sześćdziesiąt: '60',
+  szescdziesiat: '60',
+  siedemdziesiąt: '70',
+  siedemdziesiat: '70',
+  osiemdziesiąt: '80',
+  osiemdziesiat: '80',
+  dziewięćdziesiąt: '90',
+  dziewiecdziesiat: '90',
+  sto: '100',
+};
+
+/**
+ * Spoken punctuation and symbols in part codes
+ */
+export const SPOKEN_SYMBOLS: Record<string, string> = {
+  myślnik: '-',
+  myslnik: '-',
+  kreska: '-',
+  minus: '-',
+  pauza: '-',
+  ukośnik: '/',
+  ukosnik: '/',
+  slash: '/',
+  kropka: '.',
+  podkreślenie: '_',
+  podkreslenie: '_',
+  podkreślnik: '_',
+  podkreslnik: '_',
+};
+
+/**
+ * Spoken isolated letters in part numbers (e.g. "ha" -> H, "iks" -> X)
+ */
+export const SPOKEN_LETTERS: Record<string, string> = {
+  iks: 'X',
+  igrek: 'Y',
+  jot: 'J',
+  ha: 'H',
+  wu: 'W',
+  zet: 'Z',
+  ce: 'C',
+  ka: 'K',
+  el: 'L',
+  em: 'M',
+  en: 'N',
+  pe: 'P',
+  te: 'T',
+  fał: 'V',
+  fau: 'V',
+};
+
+/**
+ * Normalizes spoken Polish numbers, symbols, and part codes into proper digits and notation.
+ * e.g.:
+ * "zero" -> "0"
+ * "zero zero trzy jeden jeden" -> "00311"
+ * "HE dwa dwa jeden myślnik zero zero trzy jeden jeden iks" -> "HE221-00311X"
+ * "filtr zero jeden" -> "filtr 01"
+ */
+export function normalizeSpokenPartNumber(input: string): string {
+  if (!input) return '';
+  let result = input;
+
+  // 1. Replace spoken symbols (myślnik, kreska, slash, etc.)
+  for (const [spoken, symbol] of Object.entries(SPOKEN_SYMBOLS)) {
+    const regex = new RegExp(`(^|\\s)${spoken}(\\s|$)`, 'gi');
+    result = result.replace(regex, `$1${symbol}$2`);
+  }
+
+  // 2. Replace spoken digits & numbers ("zero" -> "0", "jeden" -> "1", etc.)
+  // Run twice to catch adjacent spoken numbers (e.g. "zero zero" -> "0 0")
+  for (let pass = 0; pass < 2; pass++) {
+    for (const [spoken, digit] of Object.entries(POLISH_WORD_TO_DIGIT)) {
+      const regex = new RegExp(`(^|\\s)${spoken}(\\s|$)`, 'gi');
+      result = result.replace(regex, `$1${digit}$2`);
+    }
+  }
+
+  // 3. Replace spoken letters when isolated (iks -> X, ha -> H, etc.)
+  for (const [spoken, letter] of Object.entries(SPOKEN_LETTERS)) {
+    const regex = new RegExp(`(^|\\s)${spoken}(\\s|$)`, 'gi');
+    result = result.replace(regex, `$1${letter}$2`);
+  }
+
+  // 4. Compact consecutive single digits into a continuous number:
+  // e.g. "0 0 3 1 1" -> "00311"
+  result = result.replace(/(?<=\b\d)\s+(?=\d\b)/g, '');
+  result = result.replace(/(?<=\b\d{2,})\s+(?=\d\b)/g, '');
+
+  // 5. Remove unwanted spaces around code separators (-, /, .)
+  result = result.replace(/\s*([-_/])\s*/g, '$1');
+
+  // 6. Connect uppercase letter codes with adjacent numbers (e.g. "HE 221" -> "HE221", "311 X" -> "311X")
+  result = result.replace(/(?<=[A-Z]{1,3})\s+(?=\d)/g, '');
+  result = result.replace(/(?<=\d)\s+(?=[A-Z]\b)/g, '');
+
+  return result.trim();
+}
+
+/**
+ * Checks whether the browser supports native real-time Web Speech recognition
+ */
+export function isLiveSpeechSupported(): boolean {
+  if (typeof window === 'undefined') return false;
+  return Boolean(
+    (window as any).SpeechRecognition ||
+    (window as any).webkitSpeechRecognition
+  );
+}
+
+/**
+ * Live speech recognizer for real-time online dictation
+ */
+export class LiveSpeechRecognizer {
+  private recognition: any = null;
+  private isListening = false;
+  private shouldKeepListening = false;
+  private mediaStream: MediaStream | null = null;
+  private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private animationFrameId: number | null = null;
+  private accumulatedFinalText = '';
+  private currentInterimText = '';
+
+  public isSupported(): boolean {
+    return isLiveSpeechSupported();
+  }
+
+  public get listening(): boolean {
+    return this.isListening;
+  }
+
+  public async start(options: LiveSpeechOptions): Promise<void> {
+    if (this.isListening) {
+      this.stop();
+    }
+
+    const SpeechRec =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRec) {
+      throw new Error('Przeglądarka nie obsługuje funkcji Live Speech Recognition.');
+    }
+
+    this.accumulatedFinalText = options.initialText ? options.initialText.trim() : '';
+    this.currentInterimText = '';
+    this.shouldKeepListening = true;
+
+    // Set up AudioContext for real-time visualizer volume if microphone is available
+    try {
+      if (navigator?.mediaDevices?.getUserMedia) {
+        this.mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          this.audioContext = new AudioCtx();
+          if (this.audioContext.state === 'suspended') {
+            await this.audioContext.resume();
+          }
+          this.analyser = this.audioContext.createAnalyser();
+          this.analyser.fftSize = 64;
+          const source = this.audioContext.createMediaStreamSource(this.mediaStream);
+          source.connect(this.analyser);
+
+          const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+          const updateVolume = () => {
+            if (!this.analyser || !this.isListening) return;
+            this.analyser.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+              sum += dataArray[i];
+            }
+            const average = sum / dataArray.length;
+            const volumePercent = Math.min(100, Math.round((average / 128) * 100));
+            options.onVolumeChange?.(volumePercent);
+            this.animationFrameId = requestAnimationFrame(updateVolume);
+          };
+          this.animationFrameId = requestAnimationFrame(updateVolume);
+        }
+      }
+    } catch {
+      // AudioContext / visualizer is optional; recognition can still proceed
+    }
+
+    try {
+      this.recognition = new SpeechRec();
+      this.recognition.lang = options.lang || 'pl-PL';
+      this.recognition.continuous = true;
+      this.recognition.interimResults = true;
+      this.recognition.maxAlternatives = 1;
+
+      this.recognition.onstart = () => {
+        this.isListening = true;
+      };
+
+      this.recognition.onresult = (event: any) => {
+        let interim = '';
+        let finalChunk = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const item = event.results[i];
+          const transcript = item[0]?.transcript || '';
+          if (item.isFinal) {
+            finalChunk += transcript;
+          } else {
+            interim += transcript;
+          }
+        }
+
+        if (finalChunk) {
+          const chunkClean = finalChunk.trim();
+          if (this.accumulatedFinalText) {
+            this.accumulatedFinalText = `${this.accumulatedFinalText} ${chunkClean}`;
+          } else {
+            this.accumulatedFinalText = chunkClean;
+          }
+        }
+
+        this.currentInterimText = interim.trim();
+
+        // Build combined live text
+        const rawLiveText = [this.accumulatedFinalText, this.currentInterimText]
+          .filter(Boolean)
+          .join(' ')
+          .trim();
+
+        // Convert spoken numbers like "zero" -> "0" immediately in real-time
+        const normalizedLiveText = normalizeSpokenPartNumber(rawLiveText);
+
+        options.onLiveText(normalizedLiveText, Boolean(finalChunk && !interim));
+      };
+
+      this.recognition.onerror = (event: any) => {
+        // 'no-speech' is non-fatal: user just paused speaking
+        if (event.error === 'no-speech') {
+          return;
+        }
+        if (event.error === 'not-allowed') {
+          options.onError?.('Brak uprawnień do mikrofonu. Kliknij ikonę kłódki przy adresie strony i zezwól na mikrofon.');
+          this.stop();
+          return;
+        }
+        if (event.error === 'aborted') {
+          return;
+        }
+        options.onError?.(`Błąd rozpoznawania mowy: ${event.error || 'Nieznany'}`);
+      };
+
+      this.recognition.onend = () => {
+        // If we should keep listening (e.g. mobile chrome auto-stop after brief pause), restart
+        if (this.shouldKeepListening) {
+          try {
+            this.recognition.start();
+            return;
+          } catch {
+            // failed to restart, finalize
+          }
+        }
+        this.cleanup();
+        options.onEnd?.();
+      };
+
+      this.recognition.start();
+      this.isListening = true;
+    } catch (err: unknown) {
+      this.cleanup();
+      const msg = err instanceof Error ? err.message : 'Nie udało się uruchomić rozpoznawania mowy.';
+      throw new Error(msg);
+    }
+  }
+
+  public stop(): void {
+    this.shouldKeepListening = false;
+    if (this.recognition) {
+      try {
+        this.recognition.stop();
+      } catch {
+        // ignore
+      }
+    }
+    this.cleanup();
+  }
+
+  public cancel(): void {
+    this.shouldKeepListening = false;
+    if (this.recognition) {
+      try {
+        this.recognition.abort();
+      } catch {
+        // ignore
+      }
+    }
+    this.cleanup();
+  }
+
+  private cleanup() {
+    this.isListening = false;
+    this.shouldKeepListening = false;
+    if (this.animationFrameId) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+    if (this.audioContext && this.audioContext.state !== 'closed') {
+      try {
+        this.audioContext.close();
+      } catch {
+        // ignore
+      }
+      this.audioContext = null;
+    }
+    if (this.mediaStream) {
+      this.mediaStream.getTracks().forEach((t) => t.stop());
+      this.mediaStream = null;
+    }
+  }
+}
+
+/**
+ * Audio Recording Controller for Gemini 3.5 Transcribe
+ * Records high-fidelity audio chunks and produces a Blob for server-side processing
+ */
 export class AudioTranscriptionController {
   private mediaStream: MediaStream | null = null;
   private mediaRecorder: MediaRecorder | null = null;
@@ -17,9 +443,6 @@ export class AudioTranscriptionController {
 
   public isRecording = false;
 
-  /**
-   * Checks if audio recording is supported by current browser environment.
-   */
   public isSupported(): boolean {
     return Boolean(
       typeof window !== 'undefined' &&
@@ -28,15 +451,11 @@ export class AudioTranscriptionController {
     );
   }
 
-  /**
-   * Starts recording audio from microphone.
-   */
   public async startRecording(): Promise<void> {
     if (!this.isSupported()) {
       throw new Error('Nagrywanie dźwięku nie jest obsługiwane w tej przeglądarce.');
     }
 
-    // Determine supported mimeType
     const candidateTypes = [
       'audio/webm;codecs=opus',
       'audio/webm',
@@ -73,7 +492,7 @@ export class AudioTranscriptionController {
         }
       };
 
-      this.mediaRecorder.start(250); // Slice chunks every 250ms
+      this.mediaRecorder.start(250);
       this.isRecording = true;
     } catch (err: unknown) {
       this.stopMediaTracks();
@@ -88,9 +507,6 @@ export class AudioTranscriptionController {
     }
   }
 
-  /**
-   * Stops recording and returns the recorded audio Blob.
-   */
   public stopRecording(): Promise<Blob> {
     return new Promise((resolve, reject) => {
       if (!this.mediaRecorder || this.mediaRecorder.state === 'inactive') {
@@ -112,9 +528,6 @@ export class AudioTranscriptionController {
     });
   }
 
-  /**
-   * Cancels ongoing recording and discards audio tracks.
-   */
   public cancelRecording(): void {
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
       try {
@@ -180,8 +593,13 @@ export async function transcribeAudioBlob(blob: Blob): Promise<TranscribeRespons
     }
 
     const data = await response.json();
+    const rawText = (data.text || '').trim();
+    // Normalize any spoken words left over into digits (e.g. "zero" -> "0")
+    const cleanText = normalizeSpokenPartNumber(rawText);
+
     return {
-      text: (data.text || '').trim(),
+      text: cleanText,
+      model: data.model || 'gemini-3.5-transcribe',
     };
   } catch (err: unknown) {
     console.error('transcribeAudioBlob network error:', err);

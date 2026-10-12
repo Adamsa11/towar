@@ -101,10 +101,10 @@ export const HelpManualModal: React.FC<HelpManualModalProps> = ({
             </div>
             <div className="space-y-0.5">
               <h4 className="font-bold text-zinc-900 text-xs font-['Ubuntu',sans-serif] flex items-center gap-1.5">
-                Transkrypcja mowy na tekst (Przycisk z mikrofonem)
+                Transkrypcja mowy online na żywo (Przycisk z mikrofonem)
               </h4>
               <p className="text-[11px] text-zinc-600 leading-relaxed">
-                Kliknij zielony przycisk <strong>„Głos”</strong> z mikrofonem koło przycisku „Szukaj w bazie”. Powiedz numer części lub jej nazwę (np. <em>filtr oleju</em> lub <em>HE221-00311X</em>) i kliknij Stop. Model <strong>Gemini 3.5 Transcribe</strong> bezbłędnie przetłumaczy Twoją mowę na tekst zapytania.
+                Kliknij zielony przycisk <strong>„Głos”</strong> z mikrofonem. To co mówisz, wpisuje się <strong>na żywo online bezpośrednio w polu wyszukiwania części</strong>. Po podyktowaniu numeru (np. <em>HE221-00311X</em>) kliknij „Zakończ dyktowanie” lub od razu „Szukaj w bazie”. Dodatkowo możesz sformatować kod przez model <strong>Gemini 3.5 Transcribe</strong>.
               </p>
             </div>
           </div>
